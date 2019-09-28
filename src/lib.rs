@@ -5,7 +5,7 @@ use std::mem;
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 // Based on https://stackoverflow.com/a/2358843/1290530
-fn send_fd(fd: RawFd, sock: &UnixDatagram) {
+fn send_fd(fd: RawFd, sock: &UnixDatagram) -> Result<(), std::io::Error> {
     let mut msg: libc::msghdr = unsafe { mem::zeroed() };
     let fds: [libc::c_int; 1] = [fd];
     let mut buf: [libc::c_char; ONE_FD_BUF_SIZE] = unsafe { mem::zeroed() };
@@ -23,6 +23,26 @@ fn send_fd(fd: RawFd, sock: &UnixDatagram) {
         *fd_ptr = fds[0];
         msg.msg_controllen = (*cmsg).cmsg_len;
 
-        libc::sendmsg(sock.as_raw_fd(), &msg, 0);
+        if libc::sendmsg(sock.as_raw_fd(), &msg, 0) < 0 {
+            return Err(std::io::Error::last_os_error())
+        }
+        Ok(())
+    }
+}
+
+// Based on https://blog.cloudflare.com/know-your-scm_rights/
+fn receive_fd(sock: &UnixDatagram) -> Result<RawFd, std::io::Error> {
+    let mut msg: libc::msghdr = unsafe { mem::zeroed() };
+    let mut buf: [libc::c_char; ONE_FD_BUF_SIZE] = unsafe { mem::zeroed() };
+
+    msg.msg_control = buf.as_mut_ptr() as *mut libc::c_void;
+    msg.msg_controllen = mem::size_of_val(&buf);
+    unsafe {
+        if libc::recvmsg(sock.as_raw_fd(), &mut msg as *mut libc::msghdr, 0) < 0 {
+            return Err(std::io::Error::last_os_error())
+        }
+        let cmsg = libc::CMSG_FIRSTHDR(&msg);
+        let fd = *(libc::CMSG_DATA(cmsg) as *mut libc::c_int);
+        Ok(fd)
     }
 }
