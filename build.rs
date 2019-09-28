@@ -2,8 +2,10 @@ use std::path::PathBuf;
 use std::env;
 
 fn main() {
+    println!("cargo:rerun-if-changed=src/wrapper.h");
     let bindings = bindgen::Builder::default()
-        .header("wrapper.h")
+        .header("src/wrapper.h")
+        .whitelist_var("ONE_FD_BUF_SIZE")
         .generate()
         .expect("Failed to generate bindings!");
 
