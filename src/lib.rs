@@ -13,6 +13,15 @@ pub fn send_fd(fd: RawFd, sock: &UnixStream) -> Result<(), std::io::Error> {
 
     msg.msg_control = buf.as_mut_ptr() as *mut libc::c_void;
     msg.msg_controllen = mem::size_of_val(&buf);
+
+    let mut dummy: libc::c_char = '$' as libc::c_char;
+    let mut iov: [libc::iovec; 1] = unsafe { mem::zeroed() };
+    iov[0].iov_base = &mut dummy as *mut _ as *mut libc::c_void;
+    iov[0].iov_len = std::mem::size_of::<libc::c_char>();
+
+    msg.msg_iov = iov.as_mut_ptr();
+    msg.msg_iovlen = 1;
+
     let cmsg: *mut libc::cmsghdr; 
     unsafe {
         cmsg = libc::CMSG_FIRSTHDR(&msg);
@@ -31,10 +40,20 @@ pub fn send_fd(fd: RawFd, sock: &UnixStream) -> Result<(), std::io::Error> {
 }
 
 // Based on https://blog.cloudflare.com/know-your-scm_rights/
+// and https://gist.github.com/nazgee/2396992
 pub fn receive_fd(sock: &UnixStream) -> Result<RawFd, std::io::Error> {
     let mut msg: libc::msghdr = unsafe { mem::zeroed() };
     let mut buf: [libc::c_char; ONE_FD_BUF_SIZE] = unsafe { mem::zeroed() };
 
+    let mut dummy: libc::c_char = 0;
+    let mut iov: [libc::iovec; 1] = unsafe { mem::zeroed() };
+    iov[0].iov_base = &mut dummy as *mut _ as *mut libc::c_void;
+    iov[0].iov_len = std::mem::size_of::<libc::c_char>();
+
+
+
+    msg.msg_iov = iov.as_mut_ptr();
+    msg.msg_iovlen = 1;
     msg.msg_control = buf.as_mut_ptr() as *mut libc::c_void;
     msg.msg_controllen = mem::size_of_val(&buf);
     unsafe {
