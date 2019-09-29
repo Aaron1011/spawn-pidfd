@@ -3,13 +3,31 @@ use std::os::unix::io::{RawFd, AsRawFd, IntoRawFd, FromRawFd};
 use std::os::unix::process::CommandExt;
 use std::mem;
 use std::process::{Command, Child};
+use lazy_static::lazy_static;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 const NR_PIDFD_OPEN: i64 = 434;
 
+lazy_static! {
+    static ref SUPPORTED: bool = {
+        if unsafe { libc::syscall(NR_PIDFD_OPEN, libc::getpid(), 0) } < 0 {
+            if std::io::Error::last_os_error().raw_os_error() == Some(libc::ENOSYS) {
+                return false;
+            }
+        }
+        true
+    };
+}
+
+pub fn is_supported() -> bool {
+    return *SUPPORTED
+}
 
 pub fn spawn_pidfd(command: &mut Command) -> Result<(Child, RawFd), std::io::Error> {
+    if !*SUPPORTED {
+        return Err(std::io::Error::from_raw_os_error(libc::ENOSYS))
+    }
     let (first, second) = UnixStream::pair().unwrap();
     let second = second.into_raw_fd();
 
