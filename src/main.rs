@@ -1,4 +1,5 @@
 use std::os::unix::net::UnixStream;
+use std::process::Command;
 
 fn main() {
     let stdout_fd = 2;
@@ -14,4 +15,8 @@ fn main() {
     let new_stdout = spawn_pidfd::receive_fd(&second).unwrap();
     println!("Got second fd!");
     unsafe { libc::write(new_stdout, second_msg.as_ptr() as *const libc::c_void, second_msg.len()); }
+
+    let mut cmd = Command::new("sleep");
+    cmd.args(&["1"]);
+    println!("Pidfd: {:?}", spawn_pidfd::spawn_pidfd(&mut cmd));
 }

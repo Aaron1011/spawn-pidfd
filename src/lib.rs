@@ -1,8 +1,46 @@
 use std::os::unix::net::UnixStream;
-use std::os::unix::io::{RawFd, AsRawFd};
+use std::os::unix::io::{RawFd, AsRawFd, IntoRawFd, FromRawFd};
+use std::os::unix::process::CommandExt;
 use std::mem;
+use std::process::{Command, Child};
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+
+const NR_PIDFD_OPEN: i64 = 434;
+
+
+pub fn spawn_pidfd(command: &mut Command) -> Result<(Child, RawFd), std::io::Error> {
+    let (first, second) = UnixStream::pair().unwrap();
+    let second = second.into_raw_fd();
+
+
+    // Note - this function is run in the newly forked
+    // child *before* exec is run. This means that we need to be
+    // careful about accessing anything from the parent process,
+    // to avoid double drops.
+    // This closure only uses a raw fd from one half of the UnixStream pair
+    // We re-create the UnixStream in the closure from the raw fd,
+    // to make sure that nothing weird can happen with re-using
+    // a Rust struct in another process
+    let send_pidfd = move || {
+        let socket = unsafe { UnixStream::from_raw_fd(second) };
+        let our_pid = unsafe { libc::getpid() };
+        if our_pid < 0 {
+            return Err(std::io::Error::last_os_error())
+        }
+        let pidfd = unsafe { libc::syscall(NR_PIDFD_OPEN, our_pid, 0 /* flags */) };
+        if pidfd < 0 {
+            return Err(std::io::Error::last_os_error())
+        };
+        send_fd(pidfd as libc::c_int, &socket)?;
+        Ok(())
+    };
+
+    unsafe { command.pre_exec(send_pidfd) };
+    let child = command.spawn()?;
+    let fd = receive_fd(&first)?;
+    Ok((child, fd))
+}
 
 // Based on https://stackoverflow.com/a/2358843/1290530
 pub fn send_fd(fd: RawFd, sock: &UnixStream) -> Result<(), std::io::Error> {
