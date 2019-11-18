@@ -5,8 +5,6 @@ use std::mem;
 use std::process::{Command, Child};
 use lazy_static::lazy_static;
 
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
 const NR_PIDFD_OPEN: i64 = 434;
 
 lazy_static! {
@@ -60,11 +58,13 @@ pub fn spawn_pidfd(command: &mut Command) -> Result<(Child, RawFd), std::io::Err
     Ok((child, fd))
 }
 
+const BUF_SIZE: usize = unsafe { libc::CMSG_SPACE(std::mem::size_of::<libc::c_char>() as u32) as usize };
+
 // Based on https://stackoverflow.com/a/2358843/1290530
 pub fn send_fd(fd: RawFd, sock: &UnixStream) -> Result<(), std::io::Error> {
     let mut msg: libc::msghdr = unsafe { mem::zeroed() };
     let fds: [libc::c_int; 1] = [fd];
-    let mut buf: [libc::c_char; ONE_FD_BUF_SIZE] = unsafe { mem::zeroed() };
+    let mut buf: [libc::c_char;  BUF_SIZE] = unsafe { mem::zeroed() };
     let fd_ptr: *mut libc::c_int;
 
     msg.msg_control = buf.as_mut_ptr() as *mut libc::c_void;
@@ -99,7 +99,7 @@ pub fn send_fd(fd: RawFd, sock: &UnixStream) -> Result<(), std::io::Error> {
 // and https://gist.github.com/nazgee/2396992
 pub fn receive_fd(sock: &UnixStream) -> Result<RawFd, std::io::Error> {
     let mut msg: libc::msghdr = unsafe { mem::zeroed() };
-    let mut buf: [libc::c_char; ONE_FD_BUF_SIZE] = unsafe { mem::zeroed() };
+    let mut buf: [libc::c_char; BUF_SIZE] = unsafe { mem::zeroed() };
 
     let mut dummy: libc::c_char = 0;
     let mut iov: [libc::iovec; 1] = unsafe { mem::zeroed() };
